@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import numpy as np
-import pymeshlab
+#import pymeshlab
 import torch
 import trimesh
 from skimage import measure
@@ -159,6 +159,7 @@ def get_surface_sliding(
         combined.merge_vertices(digits_vertex=6)
         combined.export(filename)
         if simplify_mesh:
+	    import pymeshlab
             ms = pymeshlab.MeshSet()
             ms.load_new_mesh(filename)
 
