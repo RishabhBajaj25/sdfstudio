@@ -1,5 +1,7 @@
 # Define base image.
-FROM nvidia/cudagl:11.3.1-devel
+#FROM nvidia/cudagl:11.3.1-devel
+ARG CUDA_VERSION=12
+FROM nvidia/cuda:11.8.0-devel-ubuntu22.04
 #FROM nvidia/cuda:11.7.1-devel-ubuntu22.04
 # Set environment variables.
 ## Set non-interactive to prevent asking for user inputs blocking image creation.
@@ -12,10 +14,12 @@ ENV TCNN_CUDA_ARCHITECTURES=86
 ENV CUDA_HOME="/usr/local/cuda"
 
 # Install required apt packages.
+# Install required apt packages and clear cache afterwards.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
+    curl \
     ffmpeg \
     git \
     libatlas-base-dev \
@@ -24,8 +28,10 @@ RUN apt-get update && \
     libboost-program-options-dev \
     libboost-system-dev \
     libboost-test-dev \
+    libhdf5-dev \
     libcgal-dev \
     libeigen3-dev \
+    libflann-dev \
     libfreeimage-dev \
     libgflags-dev \
     libglew-dev \
@@ -33,16 +39,19 @@ RUN apt-get update && \
     libmetis-dev \
     libprotobuf-dev \
     libqt5opengl5-dev \
+    libsqlite3-dev \
     libsuitesparse-dev \
     nano \
     protobuf-compiler \
-    python3.8-dev \
+    python-is-python3 \
+    python3.10-dev \
     python3-pip \
     qtbase5-dev \
-    wget
-RUN apt-get install curl
-RUN pip3 uninstall PyQt5
-RUN apt-get install -y python3-pyqt5
+    sudo \
+    vim-tiny \
+    wget && \
+    rm -rf /var/lib/apt/lists/*
+    
 # Install GLOG (required by ceres).
 RUN git clone --branch v0.6.0 https://github.com/google/glog.git --single-branch && \
     cd glog && \
@@ -69,15 +78,16 @@ RUN git clone --branch 2.1.0 https://ceres-solver.googlesource.com/ceres-solver.
     rm -r ceres-solver
 
 # Install colmap.
-RUN git clone --branch 3.7 https://github.com/colmap/colmap.git --single-branch && \
+RUN git clone --branch 3.8 https://github.com/colmap/colmap.git --single-branch && \
     cd colmap && \
     mkdir build && \
     cd build && \
-    cmake .. && \
-    make -j && \
+    cmake .. -DCUDA_ENABLED=ON \
+             -DCMAKE_CUDA_ARCHITECTURES=${TCNN_CUDA_ARCHITECTURES} && \
+    make -j `nproc` && \
     make install && \
     cd ../.. && \
-    rm -r colmap
+    rm -rf colmap
     
 # Create non root user and setup environment.
 RUN useradd -m -d /home/user -u 1000 user
@@ -91,11 +101,17 @@ ENV PATH="${PATH}:/home/user/.local/bin"
 SHELL ["/bin/bash", "-c"]
 
 # Upgrade pip and install packages.
-RUN python3.8 -m pip install --upgrade pip setuptools pathtools promise
-# Install pytorch and submodules.
-RUN python3.8 -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cu113
-# Install tynyCUDNN.
-RUN python3.8 -m pip install git+https://github.com/NVlabs/tiny-cuda-nn.git#subdirectory=bindings/torch
+# Upgrade pip and install packages.
+RUN python3.10 -m pip install --upgrade pip setuptools pathtools promise pybind11
+# Install pytorch and submodules
+RUN CUDA_VER=${CUDA_VERSION%.*} && CUDA_VER=${CUDA_VER//./} && python3.10 -m pip install \
+    torch==2.0.1+cu${CUDA_VER} \
+    torchvision==0.15.2+cu${CUDA_VER} \
+        --extra-index-url https://download.pytorch.org/whl/cu${CUDA_VER}
+# Install tynyCUDNN (we need to set the target architectures as environment variable first).
+ENV TCNN_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}
+RUN python3.10 -m pip install git+https://github.com/NVlabs/tiny-cuda-nn.git@v1.6#subdirectory=bindings/torch
+
 
 # Copy nerfstudio folder and give ownership to user.
 ADD . /home/user/nerfstudio
@@ -106,7 +122,7 @@ USER 1000:1000
 
 # Install nerfstudio dependencies.
 RUN cd nerfstudio && \
-    python3.8 -m pip install -e . && \
+    python3.10 -m pip install -e . && \
     cd ..
 
 # Change working directory
@@ -114,5 +130,3 @@ WORKDIR /workspace
 
 # Install nerfstudio cli auto completion and enter shell if no command was provided.
 CMD ns-install-cli --mode install && /bin/bash
-WORKDIR /home/user/.cache/torch/hub/checkpoints 
-#RUN curl https://download.pytorch.org/models/alexnet-owt-7be5be79.pth -o /home/user/.cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
