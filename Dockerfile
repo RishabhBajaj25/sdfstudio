@@ -114,5 +114,3 @@ WORKDIR /workspace
 
 # Install nerfstudio cli auto completion and enter shell if no command was provided.
 CMD ns-install-cli --mode install && /bin/bash
-WORKDIR /home/user/.cache/torch/hub/checkpoints 
-#RUN curl https://download.pytorch.org/models/alexnet-owt-7be5be79.pth -o /home/user/.cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth
